@@ -8,6 +8,7 @@ matplotlib
 numpy  	
 `
 # Config
+copy default_config.ini -> config.ini
 ## Maps
 Openstreetmap https://wiki.openstreetmap.org/wiki/Tiles    
 ```

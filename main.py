@@ -14,10 +14,54 @@ import os
 import config
 import time
 
-# Press Umschalt+F10 to execute it or replace it with your code.
-# Press Double Shift to search everywhere for classes, files, tool windows, actions, and settings.
 
+class Map():
+    def __init__(self,BaseURL,token=''):
+        print("init Map")
+        self.BaseURL=BaseURL
+        self.token=token
+        self.tileSet=[]
+    def get_tile(self, xtile, ytile, zoom):
+        if self.BaseURL:
+            if token:
+                TileURL = f"{self.BaseURL}{zoom}/{xtile}/{ytile}.jpg90?access_token={token}"
+            else:
+                TileURL = f"{self.BaseURL}{zoom}/{xtile}/{ytile}.png"
+        else:
+            TileURL=f"http://a.tile.openstreetmap.org/{zoom}/{xtile}/{ytile}.png"
+        print(TileURL)
+        fileName = os.path.join('tiles', f"{xtile}_{ytile}_{zoom}.jpg")
+        headers = {'User-Agent': 'PythonMap_agent'}
+        req = urllib.request.Request(TileURL, headers=headers)
+        f = urllib.request.urlopen(req)
+        tile_image = plt.imread(f, format='jpeg')
+        plt.imsave(fileName, tile_image)
+        return tile_image
 
+    def add_tile(self, xtile, ytile, zoom):
+        tile_image = None
+        fileName = os.path.join('tiles', f"{xtile}_{ytile}_{zoom}.jpg")
+        try:
+            if os.path.isfile(fileName):
+                print(f"Found {fileName} in cache")
+                tile_image = plt.imread(fileName, format='jpeg', )
+            elif os.path.isfile(f"{fileName}.lock"):
+                print(f"still downloading {fileName}")
+            else:
+                tile_image = self.get_tile(xtile, ytile, zoom)
+        except Exception as e:
+            print(e)
+            print(f"delete broken{fileName}")
+            os.remove(fileName)
+
+        tile = [xtile, ytile, zoom, tile_image]
+        self.tileSet.append(tile)
+
+    def clear_tile_list(self):
+        self.tileSet=[]
+
+    def get_tilSet(self):
+        return self.tileSet
 
 
 def deg2num(lat_deg, lon_deg, zoom):
@@ -34,22 +78,7 @@ def num2deg(xtile, ytile, zoom):
   lat_deg = math.degrees(lat_rad)
   return (lat_deg, lon_deg)
 
-def getTile(xtile, ytile,zoom,token):
-    TileURL=f"http://a.tiles.mapbox.com/v4/mapbox.satellite/{zoom}/{xtile}/{ytile}.jpg90?access_token={token}"
-    #TileURL=f"http://a.tile.openstreetmap.org/{zoom}/{xtile}/{ytile}.png"
-    print(TileURL)
-    rootPath='tiles'
-    fileName = os.path.join(rootPath, f"{xtile}_{ytile}_{zoom}.jpg")
 
-    headers = {'User-Agent': 'PythonMap_agent'}
-    req = urllib.request.Request(TileURL, headers=headers)
-    f = urllib.request.urlopen(req)
-    tile = plt.imread(f, format='jpeg')
-    plt.imsave(fileName,tile)
-
-    #tile = plt.imread(f, format='jpeg')
-
-    return tile
 def meter2deg(pos, m_error):
     A = Point(geodesic(meters=m_error).destination(pos, 0).format_decimal())
     B = Point(geodesic(meters=m_error).destination(pos, 90).format_decimal())
@@ -60,18 +89,16 @@ def meter2deg(pos, m_error):
     lon_error=abs(A.latitude-C.latitude)
     return  lat_error,lon_error
 
-def plotTile(xtile, ytile,zoom,plt,token):
-    TileURL=f"http://a.tiles.mapbox.com/v4/mapbox.satellite/{zoom}/{xtile}/{ytile}.jpg90?access_token={token}"
+def plotTile(xtile, ytile,zoom,plt,mapmgr):
     print(f"x{xtile}\t\ty:{ytile}\t\tzoom{zoom}")
     tile=None
-    rootPath='tiles'
-    fileName = os.path.join(rootPath, f"{xtile}_{ytile}_{zoom}.jpg")
+    fileName = os.path.join('tiles', f"{xtile}_{ytile}_{zoom}.jpg")
     try:
         if os.path.isfile(fileName):
             print(f"Found {fileName}")
             tile = plt.imread(fileName, format='jpeg',)
         else:
-           tile = getTile(xtile, ytile,zoom,token=token)
+           tile = mapmgr.get_tile(xtile, ytile,zoom,token=token)
     except Exception as e:
         print(e)
         os.remove(fileName)
@@ -81,23 +108,29 @@ def plotTile(xtile, ytile,zoom,plt,token):
         (la1, lo1) = num2deg(xtile + 1, ytile + 1, zoom=zoom)
         plt.imshow(tile, extent=[tile_longitude, lo1, la1, tile_latitude])
 
+def plotTileList(tilset):
+    for tile in tilset:
+        (tile_latitude, tile_longitude) = num2deg(tile[0], tile[1], zoom=tile[2])
+        (la1, lo1) = num2deg(tile[0] + 1, tile[1] + 1, zoom=tile[2])
+        plt.imshow(tile[3], extent=[tile_longitude, lo1, la1, tile_latitude])
+
 def generateGrid(pos,length,width,angle):
     print("todo")
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
     gpsd.connect('raspberrypi')
+
     packet = gpsd.get_current()
     print(packet.position())
     xy_error,z_error =packet.position_precision()
-
     GPSlatidude,GPSlongitude =(packet.position())
+    old_xtile = 0
+    old_ytile = 0
     zoom=20
     maps=config.config('config.ini','Maps')
-    token=maps['token']
+    mapmgr = Map(BaseURL=maps['baseurl'],token=maps['token'])
 
-    headers = {
-        "User-Agent": "Mozilla/5.0 MyMapperTest"}
     lon = []
     lat = []
     try:
@@ -111,40 +144,52 @@ if __name__ == '__main__':
                 lon.append(float(row[1]))
     except:
         print('check csv file')
-    fig, ax = plt.subplots(figsize=(8, 7))
-    ax.scatter(lon,lat, zorder=1, alpha= 0.2, c='b', s=10)
-    devicePos=Point(GPSlatidude,GPSlongitude )#Point(52.466783082, 12.959538219)
-    (x,y)=deg2num(devicePos.latitude,devicePos.longitude, zoom)
-    #(la, lo)=num2deg(x + 0.5, y + 0.5, zoom=zoom)
-    #center=Point(la, lo)
-    scale=15
-    A = Point(geodesic(meters=scale).destination(devicePos, 0).format_decimal())
-    B = Point(geodesic(meters=scale).destination(devicePos, 90).format_decimal())
-    C = Point(geodesic(meters=scale).destination(devicePos, 180).format_decimal())
-    D = Point(geodesic(meters=scale).destination(devicePos, 270).format_decimal())
-    ax.set_xlim(min(A.longitude,B.longitude,C.longitude,D.longitude), max(A.longitude,B.longitude,C.longitude,D.longitude))
-    ax.set_ylim(min(A.latitude,B.latitude,C.latitude,D.latitude), max(A.latitude,B.latitude,C.latitude,D.latitude))
-
-    ax.plot(devicePos.longitude,devicePos.latitude, 'o', color='r')
-
-    lon_error, lat_error =meter2deg(devicePos,xy_error)
-    print(f"xy:+-{xy_error}m lon:+-{lon_error}°,lat:+-{lat_error}°")
-    ax.add_artist(Ellipse((devicePos.longitude,devicePos.latitude), height=lat_error, width=lon_error, color='blue',fill=False))
-    x_tile,y_tile= deg2num(devicePos.latitude, devicePos.longitude, zoom)
-    plotTile(x_tile,y_tile,zoom,plt,token=token)
-
-    plotTile(x_tile+1,y_tile,zoom,plt,token=token)
-    plotTile(x_tile , y_tile+1, zoom, plt,token=token)
-    plotTile(x_tile -1, y_tile, zoom, plt,token=token)
-    plotTile(x_tile,y_tile-1,zoom,plt,token=token)
-    plotTile(x_tile-1,y_tile-1,zoom,plt,token=token)
-    plotTile(x_tile-1,y_tile+1,zoom,plt,token=token)
-    plotTile(x_tile+1,y_tile-1,zoom,plt,token=token)
-       #plotTile(x_tile + 1, y_tile + 1, zoom, plt)
-
-
     plt.tight_layout()
-    ax.set_axis_off()
+
+    fig, ax = plt.subplots(figsize=(8, 7))
+    # ax.scatter(lon,lat, zorder=1, alpha= 0.2, c='b', s=10)
+
+    scale = 15
+
+    while True:
+        packet = gpsd.get_current()
+        print(packet.position())
+        xy_error, z_error = packet.position_precision()
+        GPSlatidude, GPSlongitude = (packet.position())
+
+        devicePos = Point(GPSlatidude, GPSlongitude)
+        x_tile,y_tile= deg2num(devicePos.latitude, devicePos.longitude, zoom)
+
+        (x, y) = deg2num(devicePos.latitude,devicePos.longitude, zoom)
+
+        A = Point(geodesic(meters=scale).destination(devicePos, 0).format_decimal())
+        B = Point(geodesic(meters=scale).destination(devicePos, 90).format_decimal())
+        C = Point(geodesic(meters=scale).destination(devicePos, 180).format_decimal())
+        D = Point(geodesic(meters=scale).destination(devicePos, 270).format_decimal())
+        ax.cla()
+        ax.set_axis_off()
+
+        ax.set_xlim(min(A.longitude,B.longitude,C.longitude,D.longitude), max(A.longitude,B.longitude,C.longitude,D.longitude))
+        ax.set_ylim(min(A.latitude,B.latitude,C.latitude,D.latitude), max(A.latitude,B.latitude,C.latitude,D.latitude))
+
+        ax.plot(devicePos.longitude,devicePos.latitude, 'o', color='r')
+
+        lon_error, lat_error =meter2deg(devicePos,xy_error)
+        print(f"xy:+-{xy_error}m lon:+-{lon_error}°,lat:+-{lat_error}°")
+        ax.add_artist(Ellipse((devicePos.longitude,devicePos.latitude), height=lat_error, width=lon_error, color='blue',fill=False))
+
+        if not(old_xtile == x_tile) and not (old_ytile == y_tile):
+            mapmgr.clear_tile_list()
+            mapmgr.add_tile(x_tile, y_tile,zoom)
+            mapmgr.add_tile(x_tile+1, y_tile, zoom)
+            mapmgr.add_tile(x_tile, y_tile+1, zoom)
+            mapmgr.add_tile(x_tile-1, y_tile, zoom)
+            mapmgr.add_tile(x_tile , y_tile-1, zoom)
+            old_xtile = x_tile
+            old_ytile = y_tile
+        plotTileList( mapmgr.get_tilSet())
+        plt.pause(2)
+
     plt.show()
 
 # See PyCharm help at https://www.jetbrains.com/help/pycharm/
