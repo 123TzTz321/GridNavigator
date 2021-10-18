@@ -23,14 +23,14 @@ class Map():
         self.tileSet=[]
     def get_tile(self, xtile, ytile, zoom):
         if self.BaseURL:
-            if token:
-                TileURL = f"{self.BaseURL}{zoom}/{xtile}/{ytile}.jpg90?access_token={token}"
+            if self.token:
+                TileURL = f"{self.BaseURL}{zoom}/{xtile}/{ytile}.jpg90?access_token={self.token}"
             else:
                 TileURL = f"{self.BaseURL}{zoom}/{xtile}/{ytile}.png"
         else:
             TileURL=f"http://a.tile.openstreetmap.org/{zoom}/{xtile}/{ytile}.png"
         print(TileURL)
-        fileName = os.path.join('tiles', f"{xtile}_{ytile}_{zoom}.jpg")
+        fileName = os.path.join('tiles', f"{xtile}_{ytile}_{zoom}.png")
         headers = {'User-Agent': 'PythonMap_agent'}
         req = urllib.request.Request(TileURL, headers=headers)
         f = urllib.request.urlopen(req)
@@ -40,11 +40,11 @@ class Map():
 
     def add_tile(self, xtile, ytile, zoom):
         tile_image = None
-        fileName = os.path.join('tiles', f"{xtile}_{ytile}_{zoom}.jpg")
+        fileName = os.path.join('tiles', f"{xtile}_{ytile}_{zoom}.png")
         try:
             if os.path.isfile(fileName):
                 print(f"Found {fileName} in cache")
-                tile_image = plt.imread(fileName, format='jpeg', )
+                tile_image = plt.imread(fileName, format='png', )
             elif os.path.isfile(f"{fileName}.lock"):
                 print(f"still downloading {fileName}")
             else:
