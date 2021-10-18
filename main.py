@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
-#plt.rcParams['toolbar'] = 'None'
+plt.rcParams['toolbar'] = 'None'
 import csv
 import urllib.request
 
@@ -78,7 +78,6 @@ def num2deg(xtile, ytile, zoom):
   lat_deg = math.degrees(lat_rad)
   return (lat_deg, lon_deg)
 
-
 def meter2deg(pos, m_error):
     A = Point(geodesic(meters=m_error).destination(pos, 0).format_decimal())
     B = Point(geodesic(meters=m_error).destination(pos, 90).format_decimal())
@@ -88,25 +87,6 @@ def meter2deg(pos, m_error):
     lat_error=abs(B.longitude-D.longitude)
     lon_error=abs(A.latitude-C.latitude)
     return  lat_error,lon_error
-
-def plotTile(xtile, ytile,zoom,plt,mapmgr):
-    print(f"x{xtile}\t\ty:{ytile}\t\tzoom{zoom}")
-    tile=None
-    fileName = os.path.join('tiles', f"{xtile}_{ytile}_{zoom}.jpg")
-    try:
-        if os.path.isfile(fileName):
-            print(f"Found {fileName}")
-            tile = plt.imread(fileName, format='jpeg',)
-        else:
-           tile = mapmgr.get_tile(xtile, ytile,zoom,token=token)
-    except Exception as e:
-        print(e)
-        os.remove(fileName)
-
-    if tile is not None:
-        (tile_latitude, tile_longitude) = num2deg(xtile, ytile, zoom=zoom)
-        (la1, lo1) = num2deg(xtile + 1, ytile + 1, zoom=zoom)
-        plt.imshow(tile, extent=[tile_longitude, lo1, la1, tile_latitude])
 
 def plotTileList(tilset):
     for tile in tilset:
@@ -119,17 +99,14 @@ def generateGrid(pos,length,width,angle):
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
-    gpsd.connect('raspberrypi')
 
-    packet = gpsd.get_current()
-    print(packet.position())
-    xy_error,z_error =packet.position_precision()
-    GPSlatidude,GPSlongitude =(packet.position())
     old_xtile = 0
     old_ytile = 0
-    zoom=20
+    zoom=18
     maps=config.config('config.ini','Maps')
-    mapmgr = Map(BaseURL=maps['baseurl'],token=maps['token'])
+    gpsd_conf=config.config('config.ini','gpsd')
+    mapmgr = Map(BaseURL=maps.get('baseurl'),token=maps.get('token'))
+    gpsd.connect(gpsd_conf.get('host'),port=int(gpsd_conf.get('port')))
 
     lon = []
     lat = []
@@ -144,13 +121,14 @@ if __name__ == '__main__':
                 lon.append(float(row[1]))
     except:
         print('check csv file')
-    plt.tight_layout()
+    #plt.tight_layout()
 
-    fig, ax = plt.subplots(figsize=(8, 7))
+    fig, ax = plt.subplots()
     # ax.scatter(lon,lat, zorder=1, alpha= 0.2, c='b', s=10)
 
-    scale = 15
-
+    scale = 10/4
+    moving_points=None
+    moving_points1=None
     while True:
         packet = gpsd.get_current()
         print(packet.position())
@@ -162,23 +140,29 @@ if __name__ == '__main__':
 
         (x, y) = deg2num(devicePos.latitude,devicePos.longitude, zoom)
 
-        A = Point(geodesic(meters=scale).destination(devicePos, 0).format_decimal())
-        B = Point(geodesic(meters=scale).destination(devicePos, 90).format_decimal())
-        C = Point(geodesic(meters=scale).destination(devicePos, 180).format_decimal())
-        D = Point(geodesic(meters=scale).destination(devicePos, 270).format_decimal())
-        ax.cla()
-        ax.set_axis_off()
+        A = Point(geodesic(meters=scale*4).destination(devicePos, 0).format_decimal())
+        B = Point(geodesic(meters=scale*3).destination(devicePos, 90).format_decimal())
+        C = Point(geodesic(meters=scale*4).destination(devicePos, 180).format_decimal())
+        D = Point(geodesic(meters=scale*3).destination(devicePos, 270).format_decimal())
+
+
+        #plt.tight_layout()
 
         ax.set_xlim(min(A.longitude,B.longitude,C.longitude,D.longitude), max(A.longitude,B.longitude,C.longitude,D.longitude))
         ax.set_ylim(min(A.latitude,B.latitude,C.latitude,D.latitude), max(A.latitude,B.latitude,C.latitude,D.latitude))
+        if moving_points is not None:
+            moving_points.set_visible(False)
 
-        ax.plot(devicePos.longitude,devicePos.latitude, 'o', color='r')
-
+        moving_points, =ax.plot(devicePos.longitude,devicePos.latitude, 'o', color='r')
         lon_error, lat_error =meter2deg(devicePos,xy_error)
         print(f"xy:+-{xy_error}m lon:+-{lon_error}°,lat:+-{lat_error}°")
-        ax.add_artist(Ellipse((devicePos.longitude,devicePos.latitude), height=lat_error, width=lon_error, color='blue',fill=False))
+        if moving_points1 is not None:
+            moving_points1.set_visible(False)
+        moving_points1=ax.add_artist(Ellipse((devicePos.longitude,devicePos.latitude), height=lat_error, width=lon_error, color='blue',fill=False))
 
         if not(old_xtile == x_tile) and not (old_ytile == y_tile):
+            ax.cla()
+            ax.set_axis_off()
             mapmgr.clear_tile_list()
             mapmgr.add_tile(x_tile, y_tile,zoom)
             mapmgr.add_tile(x_tile+1, y_tile, zoom)
@@ -189,6 +173,7 @@ if __name__ == '__main__':
             old_ytile = y_tile
         plotTileList( mapmgr.get_tilSet())
         plt.pause(2)
+
 
     plt.show()
 
